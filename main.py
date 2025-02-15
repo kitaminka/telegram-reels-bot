@@ -72,21 +72,20 @@ async def chosen_inline_result(update: Update, context: ContextTypes.DEFAULT_TYP
     if found:
         try:
             msg = await context.bot.send_video(chat_id=user_id, video=open(file_path, 'rb'), caption=title)
+            await context.bot.edit_message_media(
+                inline_message_id=update.chosen_inline_result.inline_message_id,
+                media=InputMediaVideo(media=msg.video.file_id)
+            )
         except:
             await context.bot.edit_message_text(
                 inline_message_id=update.chosen_inline_result.inline_message_id,
-                    text=InputTextMessageContent("Failed to download the video :(")
+                    text="Failed to download the video :("
             )
     else:
         await context.bot.edit_message_text(
             inline_message_id=update.chosen_inline_result.inline_message_id,
-            text=InputTextMessageContent("Video not found :(")
+            text="Video not found :("
         )
-
-    await context.bot.edit_message_media(
-        inline_message_id=update.chosen_inline_result.inline_message_id,
-        media=InputMediaVideo(media=msg.video.file_id)
-    )
 
 
 def main() -> None:
