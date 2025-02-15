@@ -5,49 +5,46 @@ import tempfile
 from uuid import uuid4
 
 from yt_dlp import YoutubeDL
-from telegram import Update, InlineQueryResultArticle, InlineKeyboardButton, InlineKeyboardMarkup, InputTextMessageContent
+from telegram import Update, InlineQueryResultArticle, InlineKeyboardButton, InlineKeyboardMarkup, InputTextMessageContent, InputMediaVideo
 from telegram.ext import Application, ContextTypes, InlineQueryHandler, ChosenInlineResultHandler
 from dotenv import load_dotenv
+
+load_dotenv()
+
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TEMP_DIR = tempfile.TemporaryDirectory()
 
 def validate_url(url: str) -> bool:
     url_pattern = "^https?:\\/\\/(?:www\\.)?[-a-zA-Z0-9@:%._\\+~#=]{1,256}\\.[a-zA-Z0-9()]{1,6}\\b(?:[-a-zA-Z0-9()@:%_\\+.~#?&\\/=]*)$"
     match = re.match(url_pattern, url)
     return not match == None
 
-async def get_video_info(query: str) -> (bool, str, str):
+async def download_video(query: str) -> (bool, str, str):
     with YoutubeDL({
             "noplaylist": True,
-            "extract_flat": True,
-            "skip_download": True,
-            "quiet": True
-        }) as ydl:
-
-        is_url = validate_url(query)
-        if is_url:
-            try:
-                video_info = ydl.extract_info(query, download=False)
-                return True, video_info["title"], video_info["thumbnails"][0]["url"]
-            except:
-                return False, "No results", None
-            
-        entries = ydl.extract_info(f"ytsearch:{query}", download=False)["entries"]
-        if len(entries) == 0:
-            return False, "No results", None
-            
-        video_info = entries[0]
-        return True, video_info["title"], video_info["thumbnails"][0]["url"]
-
-async def download_video(url, dir_path) -. (str, str):
-    with yt_dlp.YoutubeDL({
-            "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-            "outtmpl": os.path.join(dir_path, "%(title)s.%(ext)s"),
+            "format": "best",
+            "outtmpl": os.path.join(TEMP_DIR.name, '%(title)s.%(ext)s'),
             "quiet": True,
         }) as ydl:
 
-        video_info = await ydl.extract_info(url, download=True)
-        file_path = await ydl.prepare_filename(video_info)
-    
-        return file_path, video_info["title"]
+        is_url = validate_url(query)
+
+        try:
+            if is_url:
+                video_info = ydl.extract_info(query)
+            else:
+                entries = ydl.extract_info(f"ytsearch:{query}")["entries"]
+
+                if len(entries) == 0:
+                    return False, "", ""
+
+                video_info = entries[0]
+        except:
+            return False, "", ""
+
+        file_path = ydl.prepare_filename(video_info)
+        
+        return True, file_path, video_info.get("title", "Video")
 
 async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.inline_query.query
@@ -55,20 +52,12 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     if not query:
         return
 
-    found, title, thumbnail_url = await get_video_info(query)
-
     keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(":3", callback_data="button_click")]])
-
-    if found:
-        message_content = InputTextMessageContent("Downloading...")
-    else:
-        message_content = InputTextMessageContent("Failed to download the video.")
 
     result = InlineQueryResultArticle(
         id=str(uuid4()),
-        title=title,
-        thumbnail_url=thumbnail_url,
-        input_message_content=message_content,
+        title="Download video",
+        input_message_content=InputTextMessageContent("Downloading..."),
         reply_markup=keyboard,
     )
 
@@ -78,14 +67,29 @@ async def chosen_inline_result(update: Update, context: ContextTypes.DEFAULT_TYP
     query = update.chosen_inline_result.query
     user_id = update.chosen_inline_result.from_user.id
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        await download_video(temp_dir, query)
+    found, file_path, title = await download_video(query)
+
+    if found:
+        try:
+            msg = await context.bot.send_video(chat_id=user_id, video=open(file_path, 'rb'), caption=title)
+        except:
+            await context.bot.edit_message_text(
+                inline_message_id=update.chosen_inline_result.inline_message_id,
+                    text=InputTextMessageContent("Failed to download the video :(")
+            )
+    else:
+        await context.bot.edit_message_text(
+            inline_message_id=update.chosen_inline_result.inline_message_id,
+            text=InputTextMessageContent("Video not found :(")
+        )
+
+    await context.bot.edit_message_media(
+        inline_message_id=update.chosen_inline_result.inline_message_id,
+        media=InputMediaVideo(media=msg.video.file_id)
+    )
 
 
 def main() -> None:
-    load_dotenv()
-
-    TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
     app = Application.builder().token(TELEGRAM_TOKEN).build()
 
