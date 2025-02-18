@@ -12,18 +12,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-TEMP_DIR = tempfile.TemporaryDirectory()
 
 def validate_url(url: str) -> bool:
     url_pattern = "^https?:\\/\\/(?:www\\.)?[-a-zA-Z0-9@:%._\\+~#=]{1,256}\\.[a-zA-Z0-9()]{1,6}\\b(?:[-a-zA-Z0-9()@:%_\\+.~#?&\\/=]*)$"
     match = re.match(url_pattern, url)
     return not match == None
 
-async def download_video(query: str) -> (bool, str, str):
+async def download_video(query: str, temp_dir: str) -> (bool, str, str):
     with YoutubeDL({
             "noplaylist": True,
             "format": "best",
-            "outtmpl": os.path.join(TEMP_DIR.name, '%(title)s.%(ext)s'),
+            "outtmpl": os.path.join(temp_dir, "%(title)s.%(ext)s"),
             "quiet": True,
         }) as ydl:
 
@@ -67,25 +66,26 @@ async def chosen_inline_result(update: Update, context: ContextTypes.DEFAULT_TYP
     query = update.chosen_inline_result.query
     user_id = update.chosen_inline_result.from_user.id
 
-    found, file_path, title = await download_video(query)
+    with tempfile.TemporaryDirectory() as temp_dir:
+        found, file_path, title = await download_video(query, temp_dir)
 
-    if found:
-        try:
-            msg = await context.bot.send_video(chat_id=user_id, video=open(file_path, 'rb'), caption=title)
-            await context.bot.edit_message_media(
-                inline_message_id=update.chosen_inline_result.inline_message_id,
-                media=InputMediaVideo(media=msg.video.file_id)
-            )
-        except:
+        if found:
+            try:
+                msg = await context.bot.send_video(chat_id=user_id, video=open(file_path, "rb"), caption=title)
+                await context.bot.edit_message_media(
+                    inline_message_id=update.chosen_inline_result.inline_message_id,
+                    media=InputMediaVideo(media=msg.video.file_id)
+                )
+            except:
+                await context.bot.edit_message_text(
+                    inline_message_id=update.chosen_inline_result.inline_message_id,
+                    text="Failed to download the video :("
+                )
+        else:
             await context.bot.edit_message_text(
                 inline_message_id=update.chosen_inline_result.inline_message_id,
-                    text="Failed to download the video :("
+                text="Video not found :("
             )
-    else:
-        await context.bot.edit_message_text(
-            inline_message_id=update.chosen_inline_result.inline_message_id,
-            text="Video not found :("
-        )
 
 
 def main() -> None:
