@@ -1,9 +1,10 @@
-# telegram-video-bot
+# Telegram Reels bot
+
+Bot for sending videos from Instagram Reels to Telegram chats using a link
 
 ## Setup
 
 ```bash
-git clone https://github.com/kitaminka/telegram-video-bot.git
 pip install -r requirements.txt
 python main.py
 ```
